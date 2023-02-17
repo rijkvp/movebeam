@@ -6,6 +6,7 @@ use movebeam::{
     Command, Response, ResponseError, Serialization, TimerInfo,
 };
 use parking_lot::Mutex;
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     io::{Read, Write},
@@ -20,7 +21,6 @@ use std::{
 };
 use tracing::{debug, error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
-use std::os::unix::fs::PermissionsExt;
 
 const HEARTBEAT: Duration = Duration::from_secs(1);
 
@@ -100,13 +100,13 @@ impl Daemon {
     ) -> Result<JoinHandle<()>> {
         if socket_path.exists() {
             info!("Removing exsisting socket '{}'", socket_path.display());
-            fs::remove_file(&socket_path).with_context(|| "Failed to remove existing socket")?;
+            fs::remove_file(socket_path).with_context(|| "Failed to remove existing socket")?;
         }
         if let Some(dir) = socket_path.parent() {
             fs::create_dir_all(dir)
                 .with_context(|| format!("Failed to create runtime directory {dir:?}"))?;
         }
-        let socket = UnixListener::bind(&socket_path)
+        let socket = UnixListener::bind(socket_path)
             .with_context(|| format!("Failed to bind socket at {socket_path:?}"))?;
         // Set permissions so that all users can write to the socket
         fs::set_permissions(socket_path, fs::Permissions::from_mode(0o722)).unwrap();

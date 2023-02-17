@@ -56,7 +56,7 @@ impl Config {
             if let Some(dir) = path.parent() {
                 fs::create_dir_all(dir).with_context(|| "Failed to create config directory")?;
             }
-            fs::write(&path, &config_str).with_context(|| "Failed to write config file")?;
+            fs::write(path, config_str).with_context(|| "Failed to write config file")?;
             info!("Created default config file at '{}'", path.display());
             Ok(default_config)
         }
@@ -83,8 +83,8 @@ mod mmss_format {
     {
         let str = String::deserialize(deserializer)?;
         let center = str
-            .find(":")
-            .ok_or(Error::custom("missing ':' splitter on duration"))?;
+            .find(':')
+            .ok_or_else(|| Error::custom("missing ':' splitter on duration"))?;
         let mins = &str[..center]
             .parse::<u64>()
             .map_err(|e| Error::custom(format!("failed to parse left integer: {}", e)))?;

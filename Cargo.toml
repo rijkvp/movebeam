@@ -20,7 +20,6 @@ bincode = { version = "2.0.0-rc.2", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 dirs = "4.0"
-x11rb = { version = "0.11", features = ["record"] }
 crossbeam-channel = "0.5"
 signal-hook = "0.3"
 tracing = "0.1"
@@ -31,7 +30,6 @@ evdev = { version = "0.12", features = ["tokio"] }
 tokio = { version = "1", features = ["rt"] }
 tokio-stream = "0.1"
 thiserror = "1.0"
-
 
 [profile.release]
 lto = true
