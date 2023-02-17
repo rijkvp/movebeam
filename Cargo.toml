@@ -27,6 +27,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 parking_lot = "0.12"
 notify-rust = "4.7"
+evdev = { version = "0.12", features = ["tokio"] }
+tokio = { version = "1", features = ["rt"] }
+tokio-stream = "0.1"
+thiserror = "1.0"
 
 
 [profile.release]

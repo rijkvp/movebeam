@@ -17,7 +17,7 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let socket_path = movebeam::socket_path()?;
+    let socket_path = movebeam::socket_path();
     let mut stream =
         UnixStream::connect(socket_path).with_context(|| "Failed to connect with socket")?;
     let msg = args.cmd.encode()?;
@@ -38,9 +38,21 @@ fn main() -> Result<()> {
             movebeam::ResponseError::NotFound => eprintln!("error: Couldn't find timer!"),
         },
         Response::List(list) => {
-            for (name, dur) in list {
-                println!("{name} {}", format_duration(dur));
+            for (name, info) in list {
+                println!(
+                    "{}\t{}/{}",
+                    name,
+                    format_duration(info.elapsed),
+                    format_duration(info.interval)
+                );
             }
+        }
+        Response::Timer(info) => {
+            println!(
+                "{}/{}",
+                format_duration(info.elapsed),
+                format_duration(info.interval)
+            );
         }
     }
     Ok(())

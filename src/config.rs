@@ -1,16 +1,19 @@
-use std::{fs, path::Path, time::Duration};
-
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::{fs, path::Path, time::Duration};
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Timer {
     pub name: String,
-    #[serde(with = "duration_format")]
+    #[serde(with = "mmss_format")]
     pub interval: Duration,
-    #[serde(with = "duration_format")]
-    pub break_duration: Duration,
+    #[serde(
+        default,
+        with = "mmss_format_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub duration: Option<Duration>,
     pub notify: bool,
 }
 
@@ -24,15 +27,15 @@ impl Default for Config {
         Self {
             timers: vec![
                 Timer {
-                    name: "micro_break".to_string(),
-                    interval: Duration::from_secs(22 * 60),
-                    break_duration: Duration::from_secs(30),
-                    notify: true,
+                    name: "move".to_string(),
+                    interval: Duration::from_secs(30 * 60),
+                    duration: None,
+                    notify: false,
                 },
                 Timer {
                     name: "break".to_string(),
-                    interval: Duration::from_secs(55 * 60),
-                    break_duration: Duration::from_secs(3 * 60),
+                    interval: Duration::from_secs(2 * 60 * 60),
+                    duration: Some(Duration::from_secs(10 * 60)),
                     notify: true,
                 },
             ],
@@ -60,7 +63,7 @@ impl Config {
     }
 }
 
-mod duration_format {
+mod mmss_format {
     use serde::{de::Error, Deserialize, Deserializer, Serializer};
     use std::time::Duration;
 
@@ -93,8 +96,8 @@ mod duration_format {
     }
 }
 
-mod duration_format_option {
-    use super::duration_format;
+mod mmss_format_opt {
+    use super::mmss_format;
     use serde::{de::Error, Deserializer, Serializer};
     use std::time::Duration;
 
@@ -103,7 +106,7 @@ mod duration_format_option {
         S: Serializer,
     {
         match duration {
-            Some(dur) => duration_format::serialize(dur, serializer),
+            Some(dur) => mmss_format::serialize(dur, serializer),
             None => serializer.serialize_none(),
         }
     }
@@ -112,7 +115,7 @@ mod duration_format_option {
     where
         D: Deserializer<'de>,
     {
-        match duration_format::deserialize(deserializer) {
+        match mmss_format::deserialize(deserializer) {
             Ok(dur) => Ok(Some(dur)),
             Err(err) => Err(Error::custom(err)),
         }

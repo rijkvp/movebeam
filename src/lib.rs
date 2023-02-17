@@ -8,9 +8,9 @@ use tracing::error;
 
 #[derive(Debug, Clone, clap::Subcommand, Decode, Encode)]
 pub enum Command {
-    /// Get a list of values from all timers
+    /// List of information from all timers
     List,
-    /// Get the value of a specific timer
+    /// Get the information of a specific timer
     Get { name: String },
     /// Reset a specific timer
     Reset { name: String },
@@ -23,10 +23,17 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, Decode, Encode)]
+pub struct TimerInfo {
+    pub elapsed: Duration,
+    pub interval: Duration,
+}
+
+#[derive(Debug, Clone, Decode, Encode)]
 pub enum Response {
     Ok,
     Duration(Duration),
-    List(Vec<(String, Duration)>),
+    Timer(TimerInfo),
+    List(Vec<(String, TimerInfo)>),
     Error(ResponseError),
 }
 
@@ -64,10 +71,8 @@ pub fn config_path() -> Result<PathBuf> {
         .context("Couldn't find the config directory")
 }
 
-pub fn socket_path() -> Result<PathBuf> {
-    dirs::runtime_dir()
-        .map(|d| d.join(APP_NAME).join(APP_NAME).with_extension("sock"))
-        .context("Couldn't find the runtime directory")
+pub fn socket_path() -> PathBuf {
+    PathBuf::from("/run").join(APP_NAME).with_extension("sock")
 }
 
 /// Sends a desktop notification

@@ -1,4 +1,10 @@
 use anyhow::{Context, Result};
+use crossbeam_channel::{Receiver, Sender};
+use movebeam::{
+    config::{Config, Timer},
+    input_listener::InputEvent,
+    Command, Response, ResponseError, Serialization, TimerInfo,
+};
 use parking_lot::Mutex;
 use std::{
     fs,
@@ -12,12 +18,9 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-use movebeam::{
-    config::{Config, Timer},
-    Command, Response, ResponseError, Serialization,
-};
 use tracing::{debug, error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
+use std::os::unix::fs::PermissionsExt;
 
 const HEARTBEAT: Duration = Duration::from_secs(1);
 
@@ -57,8 +60,9 @@ impl State {
 
 struct Daemon {
     socket_path: PathBuf,
-    state: Arc<Mutex<State>>,
     shutdown: Arc<AtomicBool>,
+    state: Arc<Mutex<State>>,
+    event_rx: Receiver<InputEvent>,
 }
 
 impl Daemon {
@@ -67,29 +71,26 @@ impl Daemon {
         signal_hook::flag::register(signal_hook::consts::SIGINT, shutdown.clone())?;
 
         let config = Config::load_or_create(&movebeam::config_path()?)?;
-
         let state = Arc::new(Mutex::new(State::new(config)));
-        Self::start_input_listener(shutdown.clone(), state.clone());
 
-        let socket_path = movebeam::socket_path()?;
+        let (event_tx, event_rx) = crossbeam_channel::bounded(128);
+        Self::start_input_listener(event_tx);
+
+        let socket_path = movebeam::socket_path();
         Self::start_socket(&socket_path, shutdown.clone(), state.clone())?;
 
         Ok(Self {
             socket_path,
             shutdown,
             state,
+            event_rx,
         })
     }
 
-    fn start_input_listener(shutdown: Arc<AtomicBool>, state: Arc<Mutex<State>>) -> JoinHandle<()> {
-        let receiver = movebeam::input_listener::start_listener();
+    fn start_input_listener(event_tx: Sender<InputEvent>) {
         thread::spawn(move || {
-            while !shutdown.load(Ordering::Relaxed) {
-                if let Ok(_) = receiver.recv() {
-                    state.lock().last_input = Instant::now();
-                }
-            }
-        })
+            movebeam::input_listener::start_listener(event_tx);
+        });
     }
 
     fn start_socket(
@@ -107,6 +108,8 @@ impl Daemon {
         }
         let socket = UnixListener::bind(&socket_path)
             .with_context(|| format!("Failed to bind socket at {socket_path:?}"))?;
+        // Set permissions so that all users can write to the socket
+        fs::set_permissions(socket_path, fs::Permissions::from_mode(0o722)).unwrap();
         info!("Running at '{}'", socket_path.display());
         Ok(thread::spawn(move || {
             while !shutdown.load(Ordering::Relaxed) {
@@ -129,9 +132,12 @@ impl Daemon {
 
     fn update(&mut self) {
         let mut state = self.state.lock();
+        if self.event_rx.try_iter().count() > 0 {
+            state.last_input = Instant::now();
+        }
         let input_elapsed = state.last_input.elapsed();
         for timer in state.timers.iter_mut() {
-            if input_elapsed > timer.0.break_duration {
+            if Some(input_elapsed) > timer.0.duration {
                 debug!("Reset {} due to inactivity", timer.0.name);
                 timer.1 = Instant::now();
             }
@@ -162,14 +168,27 @@ impl Daemon {
                 state
                     .timers
                     .iter()
-                    .map(|(t, i)| (t.name.clone(), i.elapsed()))
+                    .map(|(t, i)| {
+                        (
+                            t.name.clone(),
+                            TimerInfo {
+                                elapsed: i.elapsed(),
+                                interval: t.interval,
+                            },
+                        )
+                    })
                     .collect(),
             ),
             Command::Get { name } => state
                 .timers
                 .iter()
                 .find(|(t, _)| t.name == name)
-                .map(|(_, i)| Response::Duration(i.elapsed()))
+                .map(|(t, i)| {
+                    Response::Timer(TimerInfo {
+                        elapsed: i.elapsed(),
+                        interval: t.interval,
+                    })
+                })
                 .unwrap_or(Response::Error(ResponseError::NotFound)),
             Command::Reset { name } => {
                 if let Some(mut timer) = state.timers.iter_mut().find(|(t, _)| t.name == name) {
