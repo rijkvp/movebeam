@@ -6,19 +6,13 @@ use bincode::{Decode, Encode};
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 use tracing::error;
 
-#[derive(Debug, Clone, clap::Subcommand, Decode, Encode)]
-pub enum Command {
-    /// List of information from all timers
+#[derive(Debug, Clone, Decode, Encode)]
+pub enum Message {
     List,
-    /// Get the information of a specific timer
-    Get { name: String },
-    /// Reset a specific timer
-    Reset { name: String },
-    /// Reset all timers
+    Get(String),
+    Reset(String),
     ResetAll,
-    /// Get duration of inactivity
     Inactive,
-    /// Get duration of running
     Running,
 }
 
@@ -67,7 +61,7 @@ const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
 pub fn config_path() -> Result<PathBuf> {
     dirs::config_dir()
-        .map(|d| d.join(APP_NAME).join(APP_NAME).with_extension("yaml"))
+        .map(|d| d.join(APP_NAME).join(APP_NAME).with_extension("toml"))
         .context("Couldn't find the config directory")
 }
 

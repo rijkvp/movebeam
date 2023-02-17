@@ -3,7 +3,7 @@ use crossbeam_channel::{Receiver, Sender};
 use movebeam::{
     config::{Config, Timer},
     input_listener::InputEvent,
-    Command, Response, ResponseError, Serialization, TimerInfo,
+    Message, Response, ResponseError, Serialization, TimerInfo,
 };
 use parking_lot::Mutex;
 use std::os::unix::fs::PermissionsExt;
@@ -25,13 +25,14 @@ use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 const HEARTBEAT: Duration = Duration::from_secs(1);
 
 fn main() -> Result<()> {
-    let filter = EnvFilter::builder()
-        .with_default_directive("movebeam=INFO".parse().unwrap())
-        .from_env()
-        .unwrap();
     tracing_subscriber::registry()
-        .with(fmt::layer().with_target(false))
-        .with(filter)
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive("movebeam=INFO".parse().unwrap())
+                .from_env()
+                .unwrap(),
+        )
         .init();
 
     Daemon::start()?.run()
@@ -70,7 +71,7 @@ impl Daemon {
         let shutdown = Arc::new(AtomicBool::new(false));
         signal_hook::flag::register(signal_hook::consts::SIGINT, shutdown.clone())?;
 
-        let config = Config::load_or_create(&movebeam::config_path()?)?;
+        let config = Config::load_or_default(&movebeam::config_path()?)?;
         let state = Arc::new(Mutex::new(State::new(config)));
 
         let (event_tx, event_rx) = crossbeam_channel::bounded(128);
@@ -159,12 +160,11 @@ impl Daemon {
         stream
             .read_to_end(&mut buf)
             .with_context(|| "Failed to read message")?;
-        let command = Command::decode(&buf)?;
+        let command = Message::decode(&buf)?;
 
         let mut state = state.lock();
-        // Execute command
         let response = match command {
-            Command::List => Response::List(
+            Message::List => Response::List(
                 state
                     .timers
                     .iter()
@@ -179,7 +179,7 @@ impl Daemon {
                     })
                     .collect(),
             ),
-            Command::Get { name } => state
+            Message::Get(name) => state
                 .timers
                 .iter()
                 .find(|(t, _)| t.name == name)
@@ -190,7 +190,7 @@ impl Daemon {
                     })
                 })
                 .unwrap_or(Response::Error(ResponseError::NotFound)),
-            Command::Reset { name } => {
+            Message::Reset(name) => {
                 if let Some(mut timer) = state.timers.iter_mut().find(|(t, _)| t.name == name) {
                     timer.1 = Instant::now();
                     Response::Ok
@@ -198,14 +198,14 @@ impl Daemon {
                     Response::Error(ResponseError::NotFound)
                 }
             }
-            Command::ResetAll => {
+            Message::ResetAll => {
                 for timer in state.timers.iter_mut() {
                     timer.1 = Instant::now();
                 }
                 Response::Ok
             }
-            Command::Inactive => Response::Duration(state.last_input.elapsed()),
-            Command::Running => Response::Duration(state.startup.elapsed()),
+            Message::Inactive => Response::Duration(state.last_input.elapsed()),
+            Message::Running => Response::Duration(state.startup.elapsed()),
         };
 
         // Send response
