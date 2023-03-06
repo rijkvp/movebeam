@@ -1,0 +1,37 @@
+{
+  "dist_version": "0.0.4",
+  "announcement_tag": "v0.0.3",
+  "announcement_is_prerelease": false,
+  "announcement_title": "v0.0.3",
+  "announcement_github_body": "",
+  "releases": [
+    {
+      "app_name": "movebeam",
+      "app_version": "0.0.3",
+      "artifacts": [
+        "movebeam-v0.0.3-x86_64-unknown-linux-gnu.tar.xz"
+      ]
+    }
+  ],
+  "artifacts": {
+    "movebeam-v0.0.3-x86_64-unknown-linux-gnu.tar.xz": {
+      "name": "movebeam-v0.0.3-x86_64-unknown-linux-gnu.tar.xz",
+      "kind": "executable-zip",
+      "target_triples": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "assets": [
+        {
+          "name": "movebeam",
+          "path": "movebeam",
+          "kind": "executable"
+        },
+        {
+          "name": "movebeam-cli",
+          "path": "movebeam-cli",
+          "kind": "executable"
+        }
+      ]
+    }
+  }
+}
