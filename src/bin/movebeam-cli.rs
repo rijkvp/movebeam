@@ -28,11 +28,11 @@ pub enum Command {
         size: usize,
         #[clap(short, long, default_value_t = String::from("█"))]
         fill: String,
-        #[clap(short, long, default_value_t = String::from(" "))]
+        #[clap(short, long, default_value_t = String::from("░"))]
         empty: String,
-        #[clap(short, long, default_value_t = String::from("["))]
+        #[clap(short, long, default_value_t = String::from("▕"))]
         left: String,
-        #[clap(short, long, default_value_t = String::from("]"))]
+        #[clap(short, long, default_value_t = String::from("▏"))]
         right: String,
     },
     /// Reset a specific timer
@@ -102,7 +102,8 @@ fn main() -> Result<()> {
                 right,
             } = args.cmd
             {
-                let percentage = info.elapsed.as_secs_f64() / info.interval.as_secs_f64();
+                let percentage =
+                    (info.elapsed.as_secs_f64() / info.interval.as_secs_f64()).min(1.0);
                 let fill_count = (size as f64 * percentage).round() as usize;
                 let bar_str = fill.repeat(fill_count) + &empty.repeat(size - fill_count);
                 write!(stdout, "{}{}{}\n", left, bar_str, right)?;
