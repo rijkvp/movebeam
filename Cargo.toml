@@ -1,3 +1,4 @@
+
 [package]
 name = "movebeam"
 version = "0.0.3"
@@ -8,18 +9,22 @@ default-run = "movebeam"
 name = "movebeam"
 
 [[bin]]
-name = "movebeam"
+name = "moved"
 
 [[bin]]
-name = "movebeam-cli"
+name = "actived"
+
+[[bin]]
+name = "movebeam"
 
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.1", features = ["derive"] }
+clap_complete = "4.1"
 bincode = { version = "2.0.0-rc.2", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.7"
-dirs = "4.0"
+dirs = "5.0"
 crossbeam-channel = "0.5"
 signal-hook = "0.3"
 tracing = "0.1"

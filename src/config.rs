@@ -13,6 +13,7 @@ pub struct Timer {
         with = "mmss_format_opt",
         skip_serializing_if = "Option::is_none"
     )]
+    pub suggested: Option<Duration>,
     pub duration: Option<Duration>,
     pub notify: bool,
 }
@@ -28,13 +29,15 @@ impl Default for Config {
             timers: vec![
                 Timer {
                     name: "move".to_string(),
-                    interval: Duration::from_secs(30 * 60),
+                    interval: Duration::from_secs(25 * 60),
+                    suggested: None,
                     duration: None,
                     notify: false,
                 },
                 Timer {
                     name: "break".to_string(),
                     interval: Duration::from_secs(2 * 60 * 60),
+                    suggested: Some(Duration::from_secs(55 * 60)),
                     duration: Some(Duration::from_secs(10 * 60)),
                     notify: true,
                 },
@@ -47,11 +50,13 @@ impl Config {
     pub fn load_or_default(path: &Path) -> Result<Self> {
         if path.exists() {
             let config_str =
-                fs::read_to_string(path).with_context(|| "Failed to read config file")?;
-            Ok(toml::from_str::<Self>(&config_str)
-                .with_context(|| "Failed to read config file")?)
+                fs::read_to_string(path).with_context(|| "Failed to read configuration file")?;
+            Ok(
+                toml::from_str::<Self>(&config_str)
+                    .with_context(|| "Failed to read configuration file")?,
+            )
         } else {
-            info!("Using default config");
+            info!("No config file found, using default configuration");
             Ok(Config::default())
         }
     }
