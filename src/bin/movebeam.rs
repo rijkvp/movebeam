@@ -3,30 +3,19 @@ use clap::Parser;
 use movebeam::{
     cli::{Cli, CliCommand},
     msg::{Encoding, Message, Response, ResponseError},
+    socket::SocketClient,
 };
-use std::{
-    io::{self, Read, Write},
-    net::Shutdown,
-    os::unix::net::UnixStream,
-    time::Duration,
-};
+use std::io::Write;
+use std::time::Duration;
 
 fn main() -> Result<()> {
     let args = Cli::parse();
-    let mut stream = UnixStream::connect(movebeam::daemon_socket_path())
-        .with_context(|| "Failed to connect with socket")?;
-    let msg: Message = args.cmd.clone().into();
-    stream
-        .write_all(&msg.encode()?)
-        .with_context(|| "Failed to write message")?;
-    stream.shutdown(Shutdown::Write).unwrap();
 
-    let mut buf = Vec::new();
-    stream
-        .read_to_end(&mut buf)
-        .with_context(|| "Failed to read response")?;
-    let response = Response::decode(&buf).with_context(|| "")?;
-    let mut stdout = io::stdout().lock();
+    let mut client = SocketClient::connect(movebeam::daemon_socket())?;
+    let msg: Message = args.cmd.clone().into();
+    let res_bytes = client.send(&msg.encode()?)?;
+    let response = Response::decode(&res_bytes).with_context(|| "")?;
+    let mut stdout = std::io::stdout().lock();
     match response {
         Response::Ok => {}
         Response::Duration(d) => write!(stdout, "{}\n", format_duration(d))?,

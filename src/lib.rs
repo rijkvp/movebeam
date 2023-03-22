@@ -12,14 +12,14 @@ pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
 pub const DAEMON_NAME: &str = "moved";
 pub const ACTIVITY_DAEMON_NAME: &str = "actived";
 
-pub fn daemon_socket_path() -> PathBuf {
+pub fn daemon_socket() -> PathBuf {
     dirs::runtime_dir()
         .expect("No runtime directory found!")
         .join(APP_NAME)
         .join(DAEMON_NAME)
 }
 
-pub fn activity_daemon_path() -> PathBuf {
+pub fn activity_daemon_socket() -> PathBuf {
     PathBuf::from("/run")
         .join(APP_NAME)
         .join(ACTIVITY_DAEMON_NAME)

@@ -1,20 +1,18 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use movebeam::{
     config::{Config, Timer},
     msg::{Encoding, Message, Response, ResponseError, TimerInfo},
-    socket::Socket,
+    socket::{SocketClient, SocketServer},
 };
 use parking_lot::Mutex;
 use std::{
-    io::{Read, Write},
-    os::unix::net::UnixStream,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
@@ -48,22 +46,22 @@ fn main() -> Result<()> {
 
 struct State {
     startup: Instant,
-    last_input: Instant,
+    activity_daemon_client: SocketClient,
     timers: Vec<(Timer, Instant)>,
 }
 
 impl State {
-    fn new(config: Config) -> Self {
+    fn init(config: Config) -> Result<Self> {
         let timers: Vec<(Timer, Instant)> = config
             .timers
             .into_iter()
             .map(|t| (t, Instant::now()))
             .collect();
-        Self {
+        Ok(Self {
             startup: Instant::now(),
-            last_input: Instant::now(),
+            activity_daemon_client: SocketClient::connect(movebeam::activity_daemon_socket())?,
             timers,
-        }
+        })
     }
 }
 
@@ -79,38 +77,41 @@ impl Daemon {
 
         let config_path = args.config.unwrap_or(movebeam::config_path()?);
         let config = Config::load_or_default(&config_path)?;
-        let state = Arc::new(Mutex::new(State::new(config)));
+        let state = Arc::new(Mutex::new(State::init(config)?));
 
-        let socket = Socket::create(movebeam::daemon_socket_path(), false)?;
+        let socket = SocketServer::create(movebeam::daemon_socket(), false)?;
         Self::start_socket(shutdown.clone(), socket, state.clone());
 
-        Ok(Self {
-            shutdown,
-            state,
-        })
+        Ok(Self { shutdown, state })
     }
 
     fn run(&mut self) -> Result<()> {
         while !self.shutdown.load(Ordering::Relaxed) {
-            self.update();
+            self.update()?;
             thread::sleep(HEARTBEAT);
         }
         Ok(())
     }
 
-    fn start_socket(shutdown: Arc<AtomicBool>, socket: Socket, state: Arc<Mutex<State>>) {
-        while !shutdown.load(Ordering::Relaxed) {
-            if let Ok((stream, _)) = socket.listener.accept() {
-                if let Err(e) = Self::handle_connection(state.clone(), stream) {
-                    error!("Failed to handle connection: {e}");
-                }
-            }
-        }
+    fn start_socket(shutdown: Arc<AtomicBool>, mut socket: SocketServer, state: Arc<Mutex<State>>) {
+        thread::spawn(move || {
+            socket
+                .serve(|msg| match Self::handle_connection(state.clone(), msg) {
+                    Ok(msg) => Some(msg),
+                    Err(e) => {
+                        error!("Failed to handle connection: {e}");
+                        None
+                    }
+                })
+                .unwrap();
+        });
     }
 
-    fn update(&mut self) {
+    fn update(&mut self) -> Result<()> {
         let mut state = self.state.lock();
-        let input_elapsed = state.last_input.elapsed();
+        let resp = state.activity_daemon_client.send(&[1])?;
+        let input_elapsed = SystemTime::decode(&resp)?.elapsed()?;
+
         for (timer, mut clock) in state.timers.iter_mut() {
             trace!("[UPDATE] {}: {:?}", timer.name, clock);
             if timer.duration.is_some() && Some(input_elapsed) > timer.duration {
@@ -127,15 +128,11 @@ impl Daemon {
                 }
             }
         }
+        Ok(())
     }
 
-    fn handle_connection(state: Arc<Mutex<State>>, mut stream: UnixStream) -> Result<()> {
-        let mut msg_bytes = Vec::new();
-        stream
-            .read_to_end(&mut msg_bytes)
-            .with_context(|| "Failed to read message")?;
-        let command = Message::decode(&msg_bytes)?;
-
+    fn handle_connection(state: Arc<Mutex<State>>, msg: &[u8]) -> Result<Vec<u8>> {
+        let command = Message::decode(msg)?;
         let mut state = state.lock();
         let response = match command {
             Message::List => Response::List(
@@ -181,10 +178,6 @@ impl Daemon {
             Message::Running => Response::Duration(state.startup.elapsed()),
         };
 
-        let msg = response.encode()?;
-        stream
-            .write_all(&msg)
-            .with_context(|| "Failed to write message")?;
-        Ok(())
+        Ok(response.encode()?)
     }
 }

@@ -4,11 +4,6 @@ use bincode::{Decode, Encode};
 use std::{fmt::Debug, time::Duration};
 
 #[derive(Debug, Clone, Decode, Encode)]
-pub enum ActivityMessage {
-    Get,
-}
-
-#[derive(Debug, Clone, Decode, Encode)]
 pub enum Message {
     List,
     Get(String),
