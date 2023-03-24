@@ -12,9 +12,9 @@ pub enum Message {
     Running,
 }
 
-impl Into<Message> for CliCommand {
-    fn into(self) -> Message {
-        match self {
+impl From<CliCommand> for Message {
+    fn from(val: CliCommand) -> Self {
+        match val {
             CliCommand::List => Message::List,
             CliCommand::Get { name } | CliCommand::Bar { name, .. } => Message::Get(name),
             CliCommand::Reset { name } => Message::Reset(name),

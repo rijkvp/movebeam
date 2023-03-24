@@ -18,7 +18,7 @@ fn main() -> Result<()> {
             movebeam::input_listener::start_listener(event_tx);
         });
         thread::spawn(move || loop {
-            if let Ok(_) = event_rx.recv() {
+            if event_rx.recv().is_ok() {
                 *last_input.lock() = SystemTime::now();
             }
         });

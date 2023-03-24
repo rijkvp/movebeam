@@ -80,7 +80,7 @@ impl Daemon {
         let state = Arc::new(Mutex::new(State::init(config)?));
 
         let socket = SocketServer::create(movebeam::daemon_socket(), false)?;
-        Self::start_socket(shutdown.clone(), socket, state.clone());
+        Self::start_socket(socket, shutdown.clone(), state.clone());
 
         Ok(Self { shutdown, state })
     }
@@ -93,14 +93,16 @@ impl Daemon {
         Ok(())
     }
 
-    fn start_socket(shutdown: Arc<AtomicBool>, mut socket: SocketServer, state: Arc<Mutex<State>>) {
+    fn start_socket(mut socket: SocketServer, shutdown: Arc<AtomicBool>, state: Arc<Mutex<State>>) {
         thread::spawn(move || {
             socket
-                .serve(|msg| match Self::handle_connection(state.clone(), msg) {
-                    Ok(msg) => Some(msg),
-                    Err(e) => {
-                        error!("Failed to handle connection: {e}");
-                        None
+                .serve_until(shutdown, |msg| {
+                    match Self::handle_connection(state.clone(), msg) {
+                        Ok(msg) => Some(msg),
+                        Err(e) => {
+                            error!("Failed to handle connection: {e}");
+                            None
+                        }
                     }
                 })
                 .unwrap();
@@ -111,7 +113,6 @@ impl Daemon {
         let mut state = self.state.lock();
         let resp = state.activity_daemon_client.send(&[1])?;
         let input_elapsed = SystemTime::decode(&resp)?.elapsed()?;
-
         for (timer, mut clock) in state.timers.iter_mut() {
             trace!("[UPDATE] {}: {:?}", timer.name, clock);
             if timer.duration.is_some() && Some(input_elapsed) > timer.duration {
@@ -177,7 +178,6 @@ impl Daemon {
             }
             Message::Running => Response::Duration(state.startup.elapsed()),
         };
-
-        Ok(response.encode()?)
+        response.encode()
     }
 }

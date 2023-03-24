@@ -1,4 +1,5 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
@@ -8,8 +9,12 @@ use std::{
         prelude::PermissionsExt,
     },
     path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 const EOT: u8 = 4;
 
@@ -21,7 +26,7 @@ pub struct SocketServer {
 impl SocketServer {
     pub fn create(path: PathBuf, set_permissions: bool) -> Result<Self> {
         if let Some(run_dir) = path.parent() {
-            fs::create_dir_all(&run_dir)
+            fs::create_dir_all(run_dir)
                 .with_context(|| format!("Failed to create runtime directory {run_dir:?}"))?;
         }
         if path.exists() {
@@ -38,27 +43,46 @@ impl SocketServer {
         Ok(Self { listener, path })
     }
 
-    pub fn serve<F>(&mut self, handle: F) -> Result<()>
+    pub fn handle<F>(&mut self, f: F) -> Result<()>
     where
         F: Fn(&[u8]) -> Option<Vec<u8>>,
     {
-        // TODO: Allow sockets to shutdown
-        loop {
-            if let Ok((mut stream, _)) = self.listener.accept() {
-                let reader = std::io::BufReader::new(stream.try_clone()?);
-                for msg in reader.split(EOT) {
-                    let msg = msg?;
-                    if let Some(mut resp) = handle(&msg) {
-                        println!("sending: {:?}", resp);
-                        resp.push(EOT);
-                        stream.write(&resp)?;
-                    } else {
-                        stream.write(&[EOT])?;
-                    }
-                    stream.flush()?;
+        if let Ok((mut stream, _)) = self.listener.accept() {
+            let reader = std::io::BufReader::new(stream.try_clone()?);
+            for msg in reader.split(EOT) {
+                let msg = msg?;
+                let decoded = STANDARD_NO_PAD.decode(&msg)?;
+                trace!("Received message: {decoded:?}");
+                if let Some(resp) = f(&decoded) {
+                    trace!("Responding with: {resp:?}");
+                    let encoded = STANDARD_NO_PAD.encode(&resp);
+                    stream.write_all(&[encoded.as_bytes(), &[EOT]].concat())?;
+                } else {
+                    stream.write_all(&[EOT])?;
                 }
+                stream.flush()?;
             }
         }
+        Ok(())
+    }
+
+    pub fn serve<F>(&mut self, f: F) -> Result<()>
+    where
+        F: Fn(&[u8]) -> Option<Vec<u8>>,
+    {
+        loop {
+            self.handle(&f)?;
+        }
+    }
+
+    pub fn serve_until<F>(&mut self, shutdown: Arc<AtomicBool>, f: F) -> Result<()>
+    where
+        F: Fn(&[u8]) -> Option<Vec<u8>>,
+    {
+        while !shutdown.load(Ordering::Relaxed) {
+            self.handle(&f)?;
+        }
+        Ok(())
     }
 }
 
@@ -82,28 +106,24 @@ impl SocketClient {
     }
 
     pub fn try_send(&mut self, msg: &[u8]) -> Result<Option<Vec<u8>>> {
-        self.stream.write(&[msg, &[EOT]].concat())?;
+        trace!("Sending message over socket: {msg:?}");
+        let encoded = STANDARD_NO_PAD.encode(msg);
+        self.stream.write_all(&[encoded.as_bytes(), &[EOT]].concat())?;
         self.stream.flush()?;
         let mut response = Vec::new();
         self.reader.read_until(EOT, &mut response)?;
         response.pop();
-        if response.len() == 0 {
+        if response.is_empty() {
             return Ok(None);
         }
-        Ok(Some(response))
+        let decoded = STANDARD_NO_PAD.decode(&response)?;
+        trace!("Received response: {decoded:?}");
+        Ok(Some(decoded))
     }
 
     pub fn send(&mut self, msg: &[u8]) -> Result<Vec<u8>> {
-        match self.try_send(msg) {
-            Ok(o) => {
-                if let Some(v) = o {
-                    Ok(v)
-                } else {
-                    bail!("Empty response: error on server.")
-                }
-            }
-            Err(e) => Err(e),
-        }
+        self.try_send(msg)?
+            .ok_or_else(|| anyhow!("Empty response: server error"))
     }
 }
 
