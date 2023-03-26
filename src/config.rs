@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::{fs, path::Path, time::Duration};
 use tracing::info;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Timer {
     pub name: String,
     #[serde(with = "mmss_format")]
@@ -14,25 +14,51 @@ pub struct Timer {
         skip_serializing_if = "Option::is_none"
     )]
     pub suggested: Option<Duration>,
+    #[serde(
+        default,
+        with = "mmss_format_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub duration: Option<Duration>,
     pub notify: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct Activity {
+    #[serde(
+        default,
+        with = "mmss_format_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub inactivity_pause: Option<Duration>,
+    #[serde(
+        default,
+        with = "mmss_format_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub inactivity_reset: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    pub activity: Option<Activity>,
     pub timers: Vec<Timer>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            activity: Some(Activity {
+                inactivity_pause: Some(Duration::from_secs(10)),
+                inactivity_reset: Some(Duration::from_secs(5 * 60)),
+            }),
             timers: vec![
                 Timer {
                     name: "move".to_string(),
                     interval: Duration::from_secs(25 * 60),
                     suggested: None,
                     duration: None,
-                    notify: false,
+                    notify: true,
                 },
                 Timer {
                     name: "break".to_string(),
@@ -51,10 +77,8 @@ impl Config {
         if path.exists() {
             let config_str =
                 fs::read_to_string(path).with_context(|| "Failed to read configuration file")?;
-            Ok(
-                toml::from_str::<Self>(&config_str)
-                    .with_context(|| "Failed to read configuration file")?,
-            )
+            Ok(toml::from_str::<Self>(&config_str)
+                .with_context(|| "Failed to read configuration file")?)
         } else {
             info!("No config file found, using default configuration");
             Ok(Config::default())

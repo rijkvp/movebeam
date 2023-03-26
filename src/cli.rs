@@ -20,17 +20,15 @@ pub enum CliCommand {
         size: usize,
         #[clap(short, long, default_value_t = String::from("█"))]
         fill: String,
-        #[clap(short, long, default_value_t = String::from(" "))]
+        #[clap(short, long, default_value_t = String::from("░"))]
         empty: String,
-        #[clap(short, long, default_value_t = String::from("["))]
+        #[clap(short, long, default_value_t = String::from("▕"))]
         left: String,
-        #[clap(short, long, default_value_t = String::from("]"))]
+        #[clap(short, long, default_value_t = String::from("▏"))]
         right: String,
     },
     /// Reset a specific timer
     Reset { name: String },
     /// Reset all timers
     ResetAll,
-    /// Get duration of running
-    Running,
 }

@@ -9,7 +9,6 @@ pub enum Message {
     Get(String),
     Reset(String),
     ResetAll,
-    Running,
 }
 
 impl From<CliCommand> for Message {
@@ -19,7 +18,6 @@ impl From<CliCommand> for Message {
             CliCommand::Get { name } | CliCommand::Bar { name, .. } => Message::Get(name),
             CliCommand::Reset { name } => Message::Reset(name),
             CliCommand::ResetAll => Message::ResetAll,
-            CliCommand::Running => Message::Running,
         }
     }
 }

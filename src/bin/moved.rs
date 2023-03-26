@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::{command, Parser};
 use movebeam::{
     config::{Config, Timer},
     msg::{Encoding, Message, Response, ResponseError, TimerInfo},
@@ -14,12 +15,10 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime},
 };
-use tracing::{debug, error, info, trace};
+use tracing::{error, info, trace};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
 const HEARTBEAT: Duration = Duration::from_secs(1);
-
-use clap::{command, Parser};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -32,12 +31,7 @@ pub struct Args {
 fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive("movebeam=INFO".parse().unwrap())
-                .from_env()
-                .unwrap(),
-        )
+        .with(EnvFilter::builder().from_env().unwrap())
         .init();
     let args = Args::parse();
 
@@ -45,22 +39,29 @@ fn main() -> Result<()> {
 }
 
 struct State {
-    startup: Instant,
-    activity_daemon_client: SocketClient,
-    timers: Vec<(Timer, Instant)>,
+    config: Config,
+    activity_daemon_client: Option<SocketClient>,
+    timers: Vec<(Duration, Timer)>,
+    last_update: Instant,
 }
 
 impl State {
     fn init(config: Config) -> Result<Self> {
-        let timers: Vec<(Timer, Instant)> = config
+        let timers: Vec<(Duration, Timer)> = config
             .timers
-            .into_iter()
-            .map(|t| (t, Instant::now()))
+            .iter()
+            .map(|t| (Duration::ZERO, t.clone()))
             .collect();
+        let activity_daemon_client = if config.activity.is_some() {
+            Some(SocketClient::connect(movebeam::activity_daemon_socket())?)
+        } else {
+            None
+        };
         Ok(Self {
-            startup: Instant::now(),
-            activity_daemon_client: SocketClient::connect(movebeam::activity_daemon_socket())?,
+            config,
+            activity_daemon_client,
             timers,
+            last_update: Instant::now(),
         })
     }
 }
@@ -87,7 +88,10 @@ impl Daemon {
 
     fn run(&mut self) -> Result<()> {
         while !self.shutdown.load(Ordering::Relaxed) {
-            self.update()?;
+            {
+                let mut state = self.state.lock();
+                Self::update(&mut state)?;
+            }
             thread::sleep(HEARTBEAT);
         }
         Ok(())
@@ -109,17 +113,54 @@ impl Daemon {
         });
     }
 
-    fn update(&mut self) -> Result<()> {
-        let mut state = self.state.lock();
-        let resp = state.activity_daemon_client.send(&[1])?;
-        let input_elapsed = SystemTime::decode(&resp)?.elapsed()?;
-        for (timer, mut clock) in state.timers.iter_mut() {
-            trace!("[UPDATE] {}: {:?}", timer.name, clock);
-            if timer.duration.is_some() && Some(input_elapsed) > timer.duration {
-                debug!("Reset {} due to inactivity", timer.name);
-                clock = Instant::now();
+    fn update(state: &mut State) -> Result<()> {
+        let input_elapsed = if let Some(client) = &mut state.activity_daemon_client {
+            let resp = client.send(&[1])?;
+            Some(SystemTime::decode(&resp)?.elapsed()?)
+        } else {
+            None
+        };
+
+        let mut reset = false;
+        let delta = state.last_update.elapsed();
+
+        let (inactivity_pause, inactivity_reset) = if let Some(activity) = &state.config.activity {
+            (activity.inactivity_pause, activity.inactivity_reset)
+        } else {
+            (None, None)
+        };
+
+        // Reset when inactive
+        // Also checks for the delta to be bigger which can happen when pc was in sleep
+        if input_elapsed >= inactivity_reset || Some(delta) >= inactivity_reset {
+            reset = true;
+        }
+
+        for item in state.timers.iter_mut() {
+            let clock = &mut item.0;
+            let timer = &item.1;
+            trace!(
+                "Update {}, clock: {:?}, interval: {:?}",
+                timer.name, clock, timer.interval
+            );
+            if timer.duration.is_some() && input_elapsed > timer.duration {
+                // Rest if over break duration
+                *clock = Duration::ZERO;
+                reset = true;
             }
-            if clock.elapsed() > timer.interval {
+
+            if reset {
+                info!("Reset timer {}", timer.name);
+                *clock = Duration::ZERO;
+                continue;
+            }
+
+            if input_elapsed <= inactivity_pause {
+                // Only update clock if not paused
+                *clock += delta;
+            }
+
+            if *clock > timer.interval {
                 info!("Timer {} went off", timer.name);
                 if timer.notify {
                     movebeam::send_notification(
@@ -127,8 +168,10 @@ impl Daemon {
                         "Time to take a break!".to_string(),
                     )
                 }
+                *clock = Duration::ZERO;
             }
         }
+        state.last_update = Instant::now();
         Ok(())
     }
 
@@ -140,11 +183,11 @@ impl Daemon {
                 state
                     .timers
                     .iter()
-                    .map(|(t, i)| {
+                    .map(|(c, t)| {
                         (
                             t.name.clone(),
                             TimerInfo {
-                                elapsed: i.elapsed(),
+                                elapsed: *c,
                                 interval: t.interval,
                             },
                         )
@@ -154,17 +197,17 @@ impl Daemon {
             Message::Get(name) => state
                 .timers
                 .iter()
-                .find(|(t, _)| t.name == name)
-                .map(|(t, i)| {
+                .find(|(_, t)| t.name == name)
+                .map(|(c, t)| {
                     Response::Timer(TimerInfo {
-                        elapsed: i.elapsed(),
+                        elapsed: *c,
                         interval: t.interval,
                     })
                 })
                 .unwrap_or(Response::Error(ResponseError::NotFound)),
             Message::Reset(name) => {
-                if let Some(mut timer) = state.timers.iter_mut().find(|(t, _)| t.name == name) {
-                    timer.1 = Instant::now();
+                if let Some(timer) = state.timers.iter_mut().find(|(_, t)| t.name == name) {
+                    timer.0 = Duration::ZERO;
                     Response::Ok
                 } else {
                     Response::Error(ResponseError::NotFound)
@@ -172,11 +215,10 @@ impl Daemon {
             }
             Message::ResetAll => {
                 for timer in state.timers.iter_mut() {
-                    timer.1 = Instant::now();
+                    timer.0 = Duration::ZERO;
                 }
                 Response::Ok
             }
-            Message::Running => Response::Duration(state.startup.elapsed()),
         };
         response.encode()
     }

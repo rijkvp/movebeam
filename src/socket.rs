@@ -39,7 +39,7 @@ impl SocketServer {
             // Set Unix permissions so that all users can write to the socket
             fs::set_permissions(&path, fs::Permissions::from_mode(0o722)).unwrap();
         }
-        info!("Started socket at '{}'", path.display());
+        info!("Created at socket at '{}'", path.display());
         Ok(Self { listener, path })
     }
 

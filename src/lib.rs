@@ -6,7 +6,7 @@ pub mod socket;
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use tracing::error;
+use tracing::{debug, error};
 
 pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
 pub const DAEMON_NAME: &str = "moved";
@@ -17,12 +17,14 @@ pub fn daemon_socket() -> PathBuf {
         .expect("No runtime directory found!")
         .join(APP_NAME)
         .join(DAEMON_NAME)
+        .with_extension("sock")
 }
 
 pub fn activity_daemon_socket() -> PathBuf {
     PathBuf::from("/run")
         .join(APP_NAME)
         .join(ACTIVITY_DAEMON_NAME)
+        .with_extension("sock")
 }
 
 pub fn config_path() -> Result<PathBuf> {
@@ -35,15 +37,13 @@ pub fn config_path() -> Result<PathBuf> {
 pub fn send_notification(title: String, description: String) {
     use notify_rust::*;
 
-    std::thread::spawn(move || {
-        if let Err(e) = Notification::new()
-            .summary(&title)
-            .body(&description)
-            .appname(APP_NAME)
-            .timeout(5)
-            .show()
-        {
-            error!("Failed to send notification: {e}");
-        }
-    });
+    debug!("Notification: {title} - {description}");
+    if let Err(e) = Notification::new()
+        .summary(&title)
+        .body(&description)
+        .appname(APP_NAME)
+        .show()
+    {
+        error!("Failed to send notification: {e}");
+    }
 }
