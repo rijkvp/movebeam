@@ -13,7 +13,7 @@ pub enum CliCommand {
     List,
     /// Get the information of a specific timer
     Get { name: String },
-    /// Get the information of a specific timer
+    /// Status bar
     Bar {
         name: String,
         #[clap(short, long, default_value_t = 16)]
@@ -26,6 +26,8 @@ pub enum CliCommand {
         left: String,
         #[clap(short, long, default_value_t = String::from("▏"))]
         right: String,
+        #[clap(short, long)]
+        blink: bool,
     },
     /// Reset a specific timer
     Reset { name: String },

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{command, Parser};
 use movebeam::{
-    config::{Config, Timer},
+    config::{Config, TimerConfig},
     msg::{Encoding, Message, Response, ResponseError, TimerInfo},
     socket::{SocketClient, SocketServer},
 };
@@ -38,19 +38,29 @@ fn main() -> Result<()> {
     Daemon::start(args)?.run()
 }
 
+struct TimerState {
+    clock: Duration,
+    went_off: bool,
+    config: TimerConfig,
+}
+
 struct State {
     config: Config,
     activity_daemon_client: Option<SocketClient>,
-    timers: Vec<(Duration, Timer)>,
+    timers: Vec<TimerState>,
     last_update: Instant,
 }
 
 impl State {
     fn init(config: Config) -> Result<Self> {
-        let timers: Vec<(Duration, Timer)> = config
+        let timers: Vec<TimerState> = config
             .timers
             .iter()
-            .map(|t| (Duration::ZERO, t.clone()))
+            .map(|t| TimerState {
+                clock: Duration::ZERO,
+                went_off: false,
+                config: t.clone(),
+            })
             .collect();
         let activity_daemon_client = if config.activity.is_some() {
             Some(SocketClient::connect(movebeam::activity_daemon_socket())?)
@@ -136,39 +146,39 @@ impl Daemon {
             reset = true;
         }
 
-        for item in state.timers.iter_mut() {
-            let clock = &mut item.0;
-            let timer = &item.1;
+        for timer in state.timers.iter_mut() {
             trace!(
                 "Update {}, clock: {:?}, interval: {:?}",
-                timer.name, clock, timer.interval
+                timer.config.name,
+                timer.clock,
+                timer.config.interval
             );
-            if timer.duration.is_some() && input_elapsed > timer.duration {
+            if timer.config.duration.is_some() && input_elapsed > timer.config.duration {
                 // Rest if over break duration
-                *clock = Duration::ZERO;
+                timer.clock = Duration::ZERO;
                 reset = true;
             }
 
             if reset {
-                info!("Reset timer {}", timer.name);
-                *clock = Duration::ZERO;
+                info!("Reset timer {}", timer.config.name);
+                timer.clock = Duration::ZERO;
                 continue;
             }
 
             if input_elapsed <= inactivity_pause {
                 // Only update clock if not paused
-                *clock += delta;
+                timer.clock += delta;
             }
 
-            if *clock > timer.interval {
-                info!("Timer {} went off", timer.name);
-                if timer.notify {
+            if !timer.went_off && timer.clock > timer.config.interval {
+                info!("Timer {} went off", timer.config.name);
+                if timer.config.notify {
                     movebeam::send_notification(
-                        format!("Timer {} went off", timer.name),
+                        format!("Timer {} went off", timer.config.name),
                         "Time to take a break!".to_string(),
                     )
                 }
-                *clock = Duration::ZERO;
+                timer.went_off = true;
             }
         }
         state.last_update = Instant::now();
@@ -183,12 +193,12 @@ impl Daemon {
                 state
                     .timers
                     .iter()
-                    .map(|(c, t)| {
+                    .map(|t| {
                         (
-                            t.name.clone(),
+                            t.config.name.clone(),
                             TimerInfo {
-                                elapsed: *c,
-                                interval: t.interval,
+                                elapsed: t.clock,
+                                interval: t.config.interval,
                             },
                         )
                     })
@@ -197,17 +207,17 @@ impl Daemon {
             Message::Get(name) => state
                 .timers
                 .iter()
-                .find(|(_, t)| t.name == name)
-                .map(|(c, t)| {
+                .find(|t| t.config.name == name)
+                .map(|t| {
                     Response::Timer(TimerInfo {
-                        elapsed: *c,
-                        interval: t.interval,
+                        elapsed: t.clock,
+                        interval: t.config.interval,
                     })
                 })
                 .unwrap_or(Response::Error(ResponseError::NotFound)),
             Message::Reset(name) => {
-                if let Some(timer) = state.timers.iter_mut().find(|(_, t)| t.name == name) {
-                    timer.0 = Duration::ZERO;
+                if let Some(timer) = state.timers.iter_mut().find(|t| t.config.name == name) {
+                    timer.clock = Duration::ZERO;
                     Response::Ok
                 } else {
                     Response::Error(ResponseError::NotFound)
@@ -215,7 +225,7 @@ impl Daemon {
             }
             Message::ResetAll => {
                 for timer in state.timers.iter_mut() {
-                    timer.0 = Duration::ZERO;
+                    timer.clock = Duration::ZERO;
                 }
                 Response::Ok
             }

@@ -4,7 +4,7 @@ use std::{fs, path::Path, time::Duration};
 use tracing::info;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Timer {
+pub struct TimerConfig {
     pub name: String,
     #[serde(with = "mmss_format")]
     pub interval: Duration,
@@ -42,7 +42,7 @@ pub struct Activity {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub activity: Option<Activity>,
-    pub timers: Vec<Timer>,
+    pub timers: Vec<TimerConfig>,
 }
 
 impl Default for Config {
@@ -53,14 +53,14 @@ impl Default for Config {
                 inactivity_reset: Some(Duration::from_secs(5 * 60)),
             }),
             timers: vec![
-                Timer {
+                TimerConfig {
                     name: "move".to_string(),
-                    interval: Duration::from_secs(25 * 60),
+                    interval: Duration::from_secs(10),
                     suggested: None,
-                    duration: None,
+                    duration: Some(Duration::from_secs(60)),
                     notify: true,
                 },
-                Timer {
+                TimerConfig {
                     name: "break".to_string(),
                     interval: Duration::from_secs(2 * 60 * 60),
                     suggested: Some(Duration::from_secs(55 * 60)),

@@ -5,8 +5,8 @@ use movebeam::{
     msg::{Encoding, Message, Response, ResponseError},
     socket::SocketClient,
 };
-use std::io::Write;
 use std::time::Duration;
+use std::{io::Write, time::SystemTime};
 
 fn main() -> Result<()> {
     let args = Cli::parse();
@@ -41,12 +41,27 @@ fn main() -> Result<()> {
                 empty,
                 left,
                 right,
+                blink,
             } = args.cmd
             {
                 let percentage =
                     (info.elapsed.as_secs_f64() / info.interval.as_secs_f64()).min(1.0);
-                let fill_count = (size as f64 * percentage).round() as usize;
-                let bar_str = fill.repeat(fill_count) + &empty.repeat(size - fill_count);
+                let bar_str = if percentage >= 1.0 && blink {
+                    let unix_time = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    if unix_time % 2 == 0 {
+                        // Blink on
+                        fill.repeat(size)
+                    } else {
+                        // Blink off
+                        empty.repeat(size)
+                    }
+                } else {
+                    let fill_count = (size as f64 * percentage).round() as usize;
+                    fill.repeat(fill_count) + &empty.repeat(size - fill_count)
+                };
                 writeln!(stdout, "{}{}{}", left, bar_str, right)?;
             } else {
                 writeln!(
