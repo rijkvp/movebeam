@@ -142,7 +142,9 @@ impl Daemon {
 
         // Reset when inactive
         // Also checks for the delta to be bigger which can happen when pc was in sleep
-        if input_elapsed >= inactivity_reset || Some(delta) >= inactivity_reset {
+        if inactivity_reset.is_some()
+            && (input_elapsed >= inactivity_reset || Some(delta) >= inactivity_reset)
+        {
             reset = true;
         }
 

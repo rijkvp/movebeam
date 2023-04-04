@@ -20,6 +20,7 @@ pub struct TimerConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub duration: Option<Duration>,
+    #[serde(default)]
     pub notify: bool,
 }
 
@@ -55,7 +56,7 @@ impl Default for Config {
             timers: vec![
                 TimerConfig {
                     name: "move".to_string(),
-                    interval: Duration::from_secs(10),
+                    interval: Duration::from_secs(2 * 25 * 60),
                     suggested: None,
                     duration: Some(Duration::from_secs(60)),
                     notify: true,
