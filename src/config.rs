@@ -40,8 +40,18 @@ pub struct Activity {
     pub inactivity_reset: Option<Duration>,
 }
 
+impl Default for Activity {
+    fn default() -> Self {
+        Self {
+            inactivity_pause: Some(Duration::from_secs(10)),
+            inactivity_reset: Some(Duration::from_secs(5 * 60)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub activity: Option<Activity>,
     pub timers: Vec<TimerConfig>,
 }
@@ -49,10 +59,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            activity: Some(Activity {
-                inactivity_pause: Some(Duration::from_secs(10)),
-                inactivity_reset: Some(Duration::from_secs(5 * 60)),
-            }),
+            activity: Some(Activity::default()),
             timers: vec![
                 TimerConfig {
                     name: "move".to_string(),
