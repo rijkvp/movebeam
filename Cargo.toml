@@ -18,42 +18,25 @@ name = "movebeam"
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.1", features = ["derive"] }
-bincode = { version = "2.0.0-rc.2", features = ["derive"] }
+clap = { version = "4.5.4", features = ["derive"] }
+bincode = { version = "2.0.0-rc.3", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.7"
+toml = "0.8.12"
 dirs = "5.0"
 crossbeam-channel = "0.5"
 signal-hook = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 parking_lot = "0.12"
-notify-rust = "4.7"
+notify-rust = "4.11"
 evdev = { version = "0.12", features = ["tokio"] }
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1.37", features = ["rt"] }
 tokio-stream = "0.1"
 thiserror = "1.0"
-base64 = "0.21"
+base64 = "0.22"
 
 [profile.release]
 lto = true
 strip = true
 codegen-units = 1
 opt-level = 3
-
-# The profile that 'cargo dist' will build with
-[profile.dist]
-inherits = "release"
-lto = "thin"
-
-# Config for 'cargo dist'
-[workspace.metadata.dist]
-# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.0.4"
-# The preferred Rust toolchain to use in CI (rustup toolchain syntax)
-rust-toolchain-version = "1.67.1"
-# CI backends to support (see 'cargo dist generate-ci')
-ci = ["github"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["x86_64-unknown-linux-gnu"]
-

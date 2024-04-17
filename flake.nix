@@ -1,24 +1,36 @@
 {
   inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    flake-utils.url = "github:numtide/flake-utils";
   };
-  outputs = { self, nixpkgs, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-utils, crane, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        inherit (nixpkgs) lib;
-        pkgs = nixpkgs.legacyPackages.${system};
-      in
-      with pkgs;
-      {
-        packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "movebeam";
-          inherit ((lib.importTOML (self + "/Cargo.toml")).package) version;
-          src = self;
-          cargoLock.lockFile = self + "/Cargo.lock";
+        pkgs = import nixpkgs { inherit system; };
+        craneLib = crane.lib.${system};
+        movebeam = craneLib.buildPackage {
+          src = craneLib.cleanCargoSource (craneLib.path ./.);
+          strictDeps = true;
         };
-        devShells.default = mkShell {
-          nativeBuildInputs = with pkgs; [ rustc cargo clippy cargo-dist cargo-outdated ];
+      in
+      {
+        checks = {
+          inherit movebeam;
+        };
+        packages.default = movebeam;
+        apps.default = flake-utils.lib.mkApp {
+          drv = movebeam;
+        };
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
+          packages =  [
+            pkgs.clippy
+            pkgs.cargo-outdated
+          ];
         };
       }
     );
